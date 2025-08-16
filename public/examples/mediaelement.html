@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaElement.js con HLS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mediaelement@6.0.2/build/mediaelementplayer.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mediaelement@6.0.2/build/mediaelement-and-player.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-8">
+    <div class="max-w-4xl mx-auto px-4">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-3xl font-bold mb-4 text-indigo-600">MediaElement.js</h1>
+            <p class="text-gray-600 mb-6">Reproductor HTML5 mejorado con soporte para múltiples formatos</p>
+            
+            <div class="mb-4">
+                <video id="video" class="w-full" controls>
+                    <p>Tu navegador no soporta video HTML5.</p>
+                </video>
+            </div>
+            
+            <div class="bg-indigo-50 p-4 rounded">
+                <h3 class="font-semibold mb-2">Características:</h3>
+                <ul class="text-sm text-gray-700 space-y-1">
+                    <li>• HTML5 mejorado con fallbacks</li>
+                    <li>• Soporte para múltiples formatos</li>
+                    <li>• Interfaz consistente entre navegadores</li>
+                    <li>• Plugins para funcionalidades extra</li>
+                    <li>• Fácil integración</li>
+                </ul>
+            </div>
+            
+            <div class="mt-4 p-3 bg-gray-50 rounded">
+                <div id="status" class="text-sm text-gray-600">Inicializando...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const videoUrl = 'http://localhost:3000/stream/demo/master.m3u8';
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                const player = new MediaElementPlayer('video', {
+                    stretching: 'responsive',
+                    features: ['playpause', 'progress', 'current', 'duration', 'volume', 'fullscreen'],
+                    sources: [{
+                        src: videoUrl,
+                        type: 'application/x-mpegURL'
+                    }],
+                    success: function(mediaElement, originalNode, instance) {
+                        console.log('✅ MediaElement.js inicializado');
+                        statusDiv.textContent = '✅ Reproductor inicializado correctamente';
+                        statusDiv.className = 'text-sm text-green-600';
+                        
+                        mediaElement.addEventListener('loadedmetadata', function() {
+                            console.log('✅ Metadata cargada');
+                        });
+                        
+                        mediaElement.addEventListener('error', function(e) {
+                            console.error('❌ Error MediaElement:', e);
+                            statusDiv.textContent = 'Error al cargar el video';
+                            statusDiv.className = 'text-sm text-red-600';
+                        });
+                    },
+                    error: function(e) {
+                        console.error('❌ Error al inicializar:', e);
+                        statusDiv.textContent = 'Error al inicializar el reproductor';
+                        statusDiv.className = 'text-sm text-red-600';
+                    }
+                });
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                statusDiv.textContent = 'Error: ' + error.message;
+                statusDiv.className = 'text-sm text-red-600';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video.js con HLS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet">
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@videojs/http-streaming@3.0.2/dist/videojs-http-streaming.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-8">
+    <div class="max-w-4xl mx-auto px-4">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-3xl font-bold mb-4 text-green-600">Video.js</h1>
+            <p class="text-gray-600 mb-6">Reproductor profesional con interfaz avanzada y soporte HLS</p>
+            
+            <div class="mb-4">
+                <video id="video" class="video-js vjs-default-skin w-full" controls preload="auto" data-setup="{}">
+                    <p>Tu navegador no soporta video HTML5.</p>
+                </video>
+            </div>
+            
+            <div class="bg-green-50 p-4 rounded">
+                <h3 class="font-semibold mb-2">Características:</h3>
+                <ul class="text-sm text-gray-700 space-y-1">
+                    <li>• Interfaz profesional y personalizable</li>
+                    <li>• Amplio ecosistema de plugins</li>
+                    <li>• Soporte para múltiples formatos</li>
+                    <li>• Analytics y métricas integradas</li>
+                    <li>• Controles de calidad automáticos</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const videoUrl = 'http://localhost:3000/stream/demo/master.m3u8';
+            
+            const player = videojs('video', {
+                fluid: true,
+                responsive: true,
+                playbackRates: [0.5, 1, 1.25, 1.5, 2],
+                sources: [{
+                    src: videoUrl,
+                    type: 'application/x-mpegURL'
+                }]
+            });
+            
+            player.ready(function() {
+                console.log('✅ Video.js listo');
+            });
+            
+            player.on('error', function(error) {
+                console.error('❌ Error Video.js:', error);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plyr con HLS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-8">
+    <div class="max-w-4xl mx-auto px-4">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-3xl font-bold mb-4 text-purple-600">Plyr</h1>
+            <p class="text-gray-600 mb-6">Reproductor moderno y ligero con interfaz limpia</p>
+            
+            <div class="mb-4">
+                <video id="video" controls>
+                    <p>Tu navegador no soporta video HTML5.</p>
+                </video>
+            </div>
+            
+            <div class="bg-purple-50 p-4 rounded">
+                <h3 class="font-semibold mb-2">Características:</h3>
+                <ul class="text-sm text-gray-700 space-y-1">
+                    <li>• Interfaz moderna y minimalista</li>
+                    <li>• Muy ligero y rápido</li>
+                    <li>• Fácil personalización</li>
+                    <li>• Soporte para teclado</li>
+                    <li>• Controles táctiles optimizados</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const videoUrl = 'http://localhost:3000/stream/demo/master.m3u8';
+            
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(videoUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    const player = new Plyr(video, {
+                        captions: { active: true, update: true },
+                        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+                        keyboard: { focused: true, global: true },
+                        controls: [
+                            'play-large',
+                            'restart',
+                            'rewind',
+                            'play',
+                            'fast-forward',
+                            'progress',
+                            'current-time',
+                            'duration',
+                            'mute',
+                            'volume',
+                            'settings',
+                            'fullscreen'
+                        ]
+                    });
+                    
+                    console.log('✅ Plyr listo');
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    console.error('❌ Error HLS:', data);
+                });
+                
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = videoUrl;
+                const player = new Plyr(video);
+                console.log('🍎 Usando soporte HLS nativo con Plyr');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shaka Player con HLS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/shaka-player/4.7.0/shaka-player.compiled.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-8">
+    <div class="max-w-4xl mx-auto px-4">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-3xl font-bold mb-4 text-red-600">Shaka Player</h1>
+            <p class="text-gray-600 mb-6">Reproductor desarrollado por Google con excelente soporte para streaming</p>
+            
+            <div class="mb-4">
+                <video id="video" class="w-full rounded-lg shadow" controls>
+                    <p>Tu navegador no soporta video HTML5.</p>
+                </video>
+            </div>
+            
+            <div class="bg-red-50 p-4 rounded">
+                <h3 class="font-semibold mb-2">Características:</h3>
+                <ul class="text-sm text-gray-700 space-y-1">
+                    <li>• Desarrollado por Google</li>
+                    <li>• Excelente soporte para DASH y HLS</li>
+                    <li>• Streaming adaptativo avanzado</li>
+                    <li>• Soporte para DRM</li>
+                    <li>• APIs robustas para desarrolladores</li>
+                </ul>
+            </div>
+            
+            <div class="mt-4 p-3 bg-gray-50 rounded">
+                <div id="status" class="text-sm text-gray-600">Inicializando...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const statusDiv = document.getElementById('status');
+            const videoUrl = 'http://localhost:3000/stream/demo/master.m3u8';
+            
+            // Inicializar Shaka Player
+            shaka.polyfill.installAll();
+            
+            if (shaka.Player.isBrowserSupported()) {
+                const player = new shaka.Player(video);
+                
+                // Configurar eventos
+                player.addEventListener('error', function(event) {
+                    console.error('❌ Error Shaka Player:', event.detail);
+                    statusDiv.textContent = 'Error: ' + event.detail.message;
+                    statusDiv.className = 'text-sm text-red-600';
+                });
+                
+                // Cargar el video
+                player.load(videoUrl).then(function() {
+                    console.log('✅ Shaka Player cargado correctamente');
+                    statusDiv.textContent = '✅ Video cargado correctamente';
+                    statusDiv.className = 'text-sm text-green-600';
+                }).catch(function(error) {
+                    console.error('❌ Error al cargar:', error);
+                    statusDiv.textContent = 'Error al cargar: ' + error.message;
+                    statusDiv.className = 'text-sm text-red-600';
+                });
+                
+            } else {
+                console.error('❌ Navegador no soportado');
+                statusDiv.textContent = '❌ Tu navegador no es compatible con Shaka Player';
+                statusDiv.className = 'text-sm text-red-600';
+            }
+        });
+    </script>
+</body>
+</html>

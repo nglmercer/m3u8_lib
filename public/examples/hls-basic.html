@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HLS.js Básico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen py-8">
+    <div class="max-w-4xl mx-auto px-4">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-3xl font-bold mb-4 text-blue-600">HLS.js Básico</h1>
+            <p class="text-gray-600 mb-6">Reproductor de video HLS usando solo HLS.js sin librerías adicionales</p>
+            
+            <div class="mb-4">
+                <video id="video" class="w-full rounded-lg shadow" controls>
+                    <p>Tu navegador no soporta video HTML5.</p>
+                </video>
+            </div>
+            
+            <div class="bg-blue-50 p-4 rounded">
+                <h3 class="font-semibold mb-2">Características:</h3>
+                <ul class="text-sm text-gray-700 space-y-1">
+                    <li>• Librería ligera y rápida</li>
+                    <li>• Soporte completo para HLS</li>
+                    <li>• Controles nativos del navegador</li>
+                    <li>• Streaming adaptativo automático</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const videoUrl = 'http://localhost:3000/stream/demo/master.m3u8';
+            
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    debug: false,
+                    enableWorker: true
+                });
+                
+                hls.loadSource(videoUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    console.log('✅ HLS manifest cargado');
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    console.error('❌ Error HLS:', data);
+                });
+                
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Safari nativo
+                video.src = videoUrl;
+                console.log('🍎 Usando soporte HLS nativo');
+            } else {
+                console.error('❌ HLS no soportado');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -60,11 +60,26 @@ streaming.get('/:videoId/master.m3u8', async (c) => {
       }
     }
     
-    // Remove subtitle references to prevent HLS.js from trying to parse .vtt files as M3U8
-    // HLS.js will handle subtitles through other mechanisms
-    content = content.replace(/^#EXT-X-MEDIA:TYPE=SUBTITLES.*$/gm, '')
-    content = content.replace(/,SUBTITLES="[^"]*"/g, '')
-    content = content.replace(/\n\n+/g, '\n')
+    // Keep subtitle references - they should work with HLS.js
+    // Only remove subtitle references if the .vtt files don't exist
+    if (videoId === 'demo') {
+      const englishSubPath = path.join(EXAMPLE_OUTPUT_DIR, 'english_subtitles.vtt')
+      const spanishSubPath = path.join(EXAMPLE_OUTPUT_DIR, 'spanish_subtitles.vtt')
+      
+      if (!fs.existsSync(englishSubPath)) {
+        content = content.replace(/^#EXT-X-MEDIA:TYPE=SUBTITLES.*LANGUAGE="en".*$/gm, '')
+      }
+      if (!fs.existsSync(spanishSubPath)) {
+        content = content.replace(/^#EXT-X-MEDIA:TYPE=SUBTITLES.*LANGUAGE="es".*$/gm, '')
+      }
+      
+      // Only remove SUBTITLES references if no subtitle files exist
+      if (!fs.existsSync(englishSubPath) && !fs.existsSync(spanishSubPath)) {
+        content = content.replace(/,SUBTITLES="[^"]*"/g, '')
+      }
+      
+      content = content.replace(/\n\n+/g, '\n')
+    }
     
     c.header('Content-Type', 'application/vnd.apple.mpegurl')
     c.header('Cache-Control', 'no-cache')
