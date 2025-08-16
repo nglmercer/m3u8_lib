@@ -1,0 +1,57 @@
+{
+  "name": "hls-video-library",
+  "version": "1.0.0",
+  "description": "Librería TypeScript para conversión de videos a HLS con gestión de subtítulos, audio y calidades",
+  "main": "dist/lib/index.js",
+  "types": "dist/lib/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "build:lib": "tsc --project tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build:lib"
+  },
+  "keywords": [
+    "hls",
+    "video",
+    "streaming",
+    "ffmpeg",
+    "typescript",
+    "m3u8",
+    "subtitles",
+    "audio",
+    "quality"
+  ],
+  "author": "Tu Nombre",
+  "license": "MIT",
+  "dependencies": {
+    "@hono/node-server": "^1.18.2",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "hono": "^4.9.2"
+  },
+  "devDependencies": {
+    "@types/ffprobe-static": "^2.0.1",
+    "@types/fluent-ffmpeg": "^2.1.24",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.17",
+    "jest": "^29.7.0",
+    "rimraf": "^5.0.5",
+    "ts-jest": "^29.1.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3"
+  },
+  "files": [
+    "dist/lib",
+    "README.md",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
