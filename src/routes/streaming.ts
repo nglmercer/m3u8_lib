@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import * as fs from 'fs'
 import * as path from 'path'
+import { M3U8Builder } from '../lib/utils/m3u8-builder'
 
 const streaming = new Hono()
 
@@ -10,7 +11,7 @@ const EXAMPLE_OUTPUT_DIR = path.join(process.cwd(), 'example-output')
 
 // Sistema de debug
 class DebugLogger {
-  private static enabled = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true'
+  private static enabled = process.env.NODE_ENV === 'development' || true;
   
   static log(category: string, message: string, data?: any) {
     if (this.enabled) {
@@ -36,6 +37,9 @@ class M3U8Handler {
     '#EXT-X-MEDIA',
     '#EXT-X-ENDLIST'
   ]
+  
+  // Cache para evitar duplicación de archivos de audio
+  private static audioCache = new Map<string, string>()
   
   static validateM3U8Content(content: string): { isValid: boolean; errors: string[] } {
     const errors: string[] = []
@@ -73,48 +77,127 @@ class M3U8Handler {
   static processM3U8Content(content: string, baseUrl: string, videoId: string): string {
     DebugLogger.log('M3U8_PROCESSING', 'Procesando contenido M3U8', { baseUrl, videoId })
     
-    let processedContent = content
+    const lines = content.split('\n')
+    const processedLines: string[] = []
     
-    // Reemplazar URLs absolutas con rutas relativas del servidor
-    processedContent = processedContent.replace(/http:\/\/localhost:3000\/example-output\/([^\s]+)/g, `${baseUrl}/$1`)
-    
-    // Para URLs relativas, añadir el baseUrl
-    processedContent = processedContent.replace(/^([^#].*\.m3u8)$/gm, (match) => {
-      if (!match.startsWith('http') && !match.startsWith('/')) {
-        // Handle demo-specific structure
-        if (videoId === 'demo' && match.startsWith('real-world-demo/')) {
-          // Convert 'real-world-demo/480p/playlist.m3u8' to '/stream/demo/480p/playlist.m3u8'
-          const pathParts = match.split('/')
-          if (pathParts.length === 3 && pathParts[0] === 'real-world-demo') {
-            return `${baseUrl}/${pathParts[1]}/${pathParts[2]}`
+    for (const line of lines) {
+      let processedLine = line
+      
+      // Procesar URLs absolutas
+      if (line.includes('http://localhost:3000/example-output/')) {
+        processedLine = line.replace(/http:\/\/localhost:3000\/example-output\/([^\s"]+)/g, `${baseUrl}/$1`)
+      }
+      
+      // Procesar URIs en directivas MEDIA
+      if (line.includes('URI="') && !line.includes('http') && !line.includes(baseUrl)) {
+        processedLine = line.replace(/URI="([^"]+)"/g, (match, uri) => {
+          if (!uri.startsWith('http') && !uri.startsWith('/')) {
+            // Para archivos de subtítulos (.vtt), convertir a playlist de subtítulos
+            if (uri.endsWith('.vtt')) {
+              const filename = path.basename(uri, '.vtt')
+              const language = filename.startsWith('sub_') ? filename.substring(4) : filename
+              if (language) {
+                return `URI="${baseUrl}/subtitles/${language}.m3u8"`
+              }
+              return `URI="${baseUrl}/subtitles/${uri}"`
+            }
+            // Para archivos de audio
+            if (uri.endsWith('.m3u8') && uri.includes('audio')) {
+              return `URI="${baseUrl}/${uri}"`
+            }
+            return `URI="${baseUrl}/${uri}"`
+          }
+          return match
+        })
+      }
+      
+      // Procesar URLs de playlist relativas
+      if (line.match(/^[^#].*\.m3u8$/)) {
+        if (!line.startsWith('http') && !line.startsWith('/')) {
+          if (videoId === 'demo' && line.startsWith('real-world-demo/')) {
+            const pathParts = line.split('/')
+            if (pathParts.length === 3 && pathParts[0] === 'real-world-demo') {
+              processedLine = `${baseUrl}/${pathParts[1]}/${pathParts[2]}`
+            }
+          } else {
+            processedLine = `${baseUrl}/${line}`
           }
         }
-        return `${baseUrl}/${match}`
       }
-      return match
-    })
-    
-    // Para URIs en las directivas MEDIA
-    processedContent = processedContent.replace(/URI="http:\/\/localhost:3000\/example-output\/([^"]+)"/g, `URI="${baseUrl}/$1"`)
-    processedContent = processedContent.replace(/URI="([^"]+)"/g, (match, uri) => {
-      if (!uri.startsWith('http') && !uri.startsWith('/')) {
-        // Para archivos de subtítulos (.vtt), convertir a playlist de subtítulos
-        if (uri.endsWith('.vtt')) {
-          const language = uri.split('.')[0]
-          if (language) {
-            return `URI="${baseUrl}/subtitles/${language}.m3u8"`
-          }
-          // Fallback for unknown VTT files
-          return `URI="${baseUrl}/subtitles/${uri}"`
-        }
-        // Para otros archivos (como .m3u8), usar ruta directa
-        return `URI="${baseUrl}/${uri}"`
-      }
-      return match
-    })
+      
+      processedLines.push(processedLine)
+    }
     
     DebugLogger.log('M3U8_PROCESSING', 'Contenido M3U8 procesado exitosamente')
-    return processedContent
+    return processedLines.join('\n')
+  }
+  
+  /**
+   * Optimizar master playlist para reutilizar archivos de audio y evitar duplicación
+   */
+  static optimizeMasterPlaylist(content: string, videoId: string): string {
+    DebugLogger.log('M3U8_OPTIMIZATION', 'Optimizando master playlist', { videoId })
+    
+    const lines = content.split('\n')
+    const optimizedLines: string[] = []
+    const seenAudioTracks = new Set<string>()
+    const seenStreamInf = new Set<string>()
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      
+      if (line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
+        // Extraer información del audio para detectar duplicados
+        const languageMatch = line.match(/LANGUAGE="([^"]+)"/)
+        const uriMatch = line.match(/URI="([^"]+)"/)
+        
+        if (languageMatch && uriMatch) {
+          const language = languageMatch[1]
+          const uri = uriMatch[1]
+          const audioKey = `${language}_${uri}`
+          
+          if (!seenAudioTracks.has(audioKey)) {
+            seenAudioTracks.add(audioKey)
+            optimizedLines.push(line)
+            DebugLogger.log('M3U8_OPTIMIZATION', 'Audio track agregado', { language, uri })
+          } else {
+            DebugLogger.log('M3U8_OPTIMIZATION', 'Audio track duplicado omitido', { language, uri })
+          }
+        } else {
+          optimizedLines.push(line)
+        }
+      } else if (line.startsWith('#EXT-X-STREAM-INF')) {
+        // Verificar si la siguiente línea (URI del stream) ya fue vista
+        const nextLine = i + 1 < lines.length ? lines[i + 1] : ''
+        const streamKey = `${line}_${nextLine}`
+        
+        if (!seenStreamInf.has(streamKey)) {
+          seenStreamInf.add(streamKey)
+          optimizedLines.push(line)
+          if (nextLine && !nextLine.startsWith('#')) {
+            i++ // Saltar la siguiente línea ya que la procesamos
+            optimizedLines.push(nextLine)
+          }
+        } else {
+          // Saltar tanto la línea STREAM-INF como la URI
+          if (nextLine && !nextLine.startsWith('#')) {
+            i++
+          }
+          DebugLogger.log('M3U8_OPTIMIZATION', 'Stream duplicado omitido', { streamInf: line })
+        }
+      } else {
+        optimizedLines.push(line)
+      }
+    }
+    
+    const optimizedContent = optimizedLines.join('\n')
+    DebugLogger.log('M3U8_OPTIMIZATION', 'Master playlist optimizado', { 
+      originalLines: lines.length,
+      optimizedLines: optimizedLines.length,
+      audioTracksFound: seenAudioTracks.size
+    })
+    
+    return optimizedContent
   }
   
   static getFilePath(videoId: string, filename: string, subdirectory?: string): string {
@@ -195,7 +278,10 @@ streaming.get('/:videoId/master.m3u8', async (c) => {
       return c.text('Master playlist inválido', 500)
     }
     
-    const processedContent = M3U8Handler.processM3U8Content(content, baseUrl, videoId)
+    let processedContent = M3U8Handler.processM3U8Content(content, baseUrl, videoId)
+    
+    // Aplicar optimización para evitar duplicación de archivos de audio
+    processedContent = M3U8Handler.optimizeMasterPlaylist(processedContent, videoId)
     
     c.header('Content-Type', M3U8Handler.getContentType('.m3u8'))
     c.header('Cache-Control', 'no-cache')
@@ -339,11 +425,34 @@ streaming.get('/:videoId/subtitles/:subtitleFile', async (c) => {
       const content = M3U8Handler.readFileContent(filePath)
       return c.text(content)
     } else if (extension === '.m3u8') {
-      // Para playlists de subtítulos
-      const content = M3U8Handler.readFileContent(filePath)
-      const baseUrl = `/stream/${videoId}/subtitles`
-      const processedContent = M3U8Handler.processM3U8Content(content, baseUrl, videoId)
-      return c.text(processedContent)
+      // Generar playlist de subtítulos dinámicamente usando M3U8Builder
+      const language = path.basename(subtitleFile, '.m3u8')
+      // Buscar el archivo VTT correspondiente (puede ser language.vtt o sub_language.vtt)
+      let vttFile = `${language}.vtt`
+      let vttPath = path.join(path.dirname(filePath), vttFile)
+      
+      // Si no existe, intentar con el formato sub_language.vtt
+      if (!M3U8Handler.fileExists(vttPath)) {
+        vttFile = `sub_${language}.vtt`
+        vttPath = path.join(path.dirname(filePath), vttFile)
+      }
+      
+      // Verificar que el archivo VTT existe
+      if (!M3U8Handler.fileExists(vttPath)) {
+        DebugLogger.error('STREAMING', 'Archivo VTT correspondiente no encontrado', { vttPath })
+        return c.text('Archivo VTT no encontrado', 404)
+      }
+      
+      // Generar playlist usando M3U8Builder
+      const builder = new M3U8Builder({
+        version: 3,
+        playlistType: 'VOD'
+      })
+      
+      const subtitlePlaylist = builder.generateSubtitlePlaylist(vttFile)
+      DebugLogger.log('STREAMING', 'Playlist de subtítulos generado dinámicamente', { language, vttFile })
+      
+      return c.text(subtitlePlaylist)
     } else {
       const fileBuffer = fs.readFileSync(filePath)
       return c.body(fileBuffer)
@@ -361,7 +470,7 @@ streaming.get('/:videoId/:vttFile', async (c) => {
     const vttFile = c.req.param('vttFile')
     
     // Solo procesar archivos .vtt
-    if (!vttFile.endsWith('.vtt')) {
+    if (!vttFile.endsWith('.vtt') || !vttFile.endsWith('.m3u8')) {
       return c.text('Archivo no encontrado', 404)
     }
     
@@ -388,3 +497,4 @@ streaming.get('/:videoId/:vttFile', async (c) => {
 })
 
 export default streaming
+export { M3U8Handler }

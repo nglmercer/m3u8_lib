@@ -242,6 +242,39 @@ export class SubtitleManager {
   }
 
   /**
+   * Generar playlist M3U8 para subtítulos individuales
+   */
+  async generateSubtitlePlaylist(
+    vttFilePath: string,
+    language: string,
+    duration?: number
+  ): Promise<string> {
+    const subtitlesDir = path.join(this.outputDir, 'subtitles');
+    await fs.mkdir(subtitlesDir, { recursive: true });
+    
+    const playlistPath = path.join(subtitlesDir, `${language}.m3u8`);
+    const vttFileName = path.basename(vttFilePath);
+    
+    // Generar contenido del playlist M3U8 para subtítulos
+    const segmentDuration = duration || 10;
+    const playlistContent = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '#EXT-X-PLAYLIST-TYPE:VOD',
+      `#EXT-X-TARGETDURATION:${segmentDuration}`,
+      '#EXT-X-MEDIA-SEQUENCE:0',
+      `#EXTINF:${segmentDuration}.000,`,
+      vttFileName,
+      '#EXT-X-ENDLIST'
+    ].join('\n');
+    
+    await fs.writeFile(playlistPath, playlistContent);
+    console.log(`[${this.videoId}] Playlist de subtítulos generado: ${path.basename(playlistPath)}`);
+    
+    return `subtitles/${language}.m3u8`;
+  }
+
+  /**
    * Generar playlist HLS con subtítulos
    */
   async generateHlsWithSubtitles(
@@ -251,17 +284,22 @@ export class SubtitleManager {
     try {
       let content = await fs.readFile(masterPlaylistPath, 'utf-8');
       
-      // Añadir información de subtítulos al playlist maestro
+      // Generar playlists M3U8 para cada subtítulo y obtener URIs
       const subtitleLines: string[] = [];
       
-      subtitles.forEach(subtitle => {
-        const subtitleUrl = `${subtitle.id}.vtt`;
+      for (const subtitle of subtitles) {
+        // Generar playlist M3U8 para este subtítulo
+        const playlistUri = await this.generateSubtitlePlaylist(
+          subtitle.path,
+          subtitle.language
+        );
+        
         subtitleLines.push(
           `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${subtitle.label}",` +
           `LANGUAGE="${subtitle.language}",${subtitle.isDefault ? 'DEFAULT=YES,' : ''}` +
-          `URI="${subtitleUrl}"`
+          `URI="${playlistUri}"`
         );
-      });
+      }
 
       // Insertar líneas de subtítulos después de la versión
       const lines = content.split('\n');
@@ -281,7 +319,7 @@ export class SubtitleManager {
         
         content = lines.join('\n');
         await fs.writeFile(masterPlaylistPath, content);
-        console.log(`[${this.videoId}] Playlist maestro actualizado con subtítulos`);
+        console.log(`[${this.videoId}] Playlist maestro actualizado con subtítulos M3U8`);
       }
     } catch (error: any) {
       console.error(`[${this.videoId}] Error actualizando playlist con subtítulos:`, error.message);

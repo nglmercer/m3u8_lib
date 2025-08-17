@@ -92,8 +92,16 @@ async function realWorldExample(): Promise<void> {
     );
     
     console.log(`    ✅ HLS generado: ${path.basename(hlsOutput.outputDir)}`);
-    console.log(`    ✅ Audio separado generado automáticamente`);
     console.log(`    ✅ Master playlist: ${hlsOutput.masterPlaylistUrl}`);
+    
+    // 7.5. Generar múltiples pistas de audio para demo
+    console.log('\n🎵 Generando múltiples pistas de audio para demo...');
+    const audioManager = new AudioManager(hlsOutput.outputDir, VIDEO_ID);
+    const demoAudioResult = await audioManager.generateDemoAudioTracks(INPUT_VIDEO);
+    console.log(`    ✅ Pistas de audio generadas: ${demoAudioResult.audioTracks.length}`);
+    demoAudioResult.audioTracks.forEach(track => {
+      console.log(`      • ${track.label} (${track.language}) - ${track.isDefault ? 'Por defecto' : 'Alternativo'}`);
+    });
 
     // 8. Procesar subtítulos externos
     console.log('\n📝 Procesando subtítulos externos...');
@@ -132,27 +140,37 @@ async function realWorldExample(): Promise<void> {
     
     console.log(`    ✅ Subtítulos convertidos a VTT: ${subtitleTracks.length} pistas`);
     
-    // Integrar subtítulos en el master playlist
+    // 9. Generar master playlist con audio y subtítulos
+    console.log('\n📋 Generando master playlist con múltiples pistas...');
     const masterPlaylistPath = path.join(hlsOutput.outputDir, 'master.m3u8');
-    await subtitleManager.generateHlsWithSubtitles(masterPlaylistPath, subtitleTracks);
-    console.log(`    ✅ Master playlist actualizado con subtítulos`);
     
-    // 9. Verificar estructura de archivos optimizada
+    // Primero integrar subtítulos (esto genera los M3U8 de subtítulos)
+    await subtitleManager.generateHlsWithSubtitles(masterPlaylistPath, subtitleTracks);
+    console.log(`    ✅ Subtítulos M3U8 integrados`);
+    
+    // Luego integrar las múltiples pistas de audio
+    await audioManager.generateHlsWithAudio(masterPlaylistPath, demoAudioResult.audioTracks);
+    console.log(`    ✅ Múltiples pistas de audio integradas`);
+    
+    // 10. Verificar estructura de archivos optimizada
     console.log('\n📁 Verificando estructura de archivos optimizada...');
     console.log(`    ✅ Video sin audio embebido: múltiples calidades`);
-    console.log(`    ✅ Audio separado: directorio /audio`);
-    console.log(`    ✅ Subtítulos: directorio /subtitles`);
+    console.log(`    ✅ Audio separado: directorio /audio con ${demoAudioResult.audioTracks.length} idiomas`);
+    console.log(`    ✅ Subtítulos: directorio /subtitles con M3U8`);
     console.log(`    ✅ URLs relativas para portabilidad`);
 
-    // 10. Verificar subtítulos
+    // 11. Verificar subtítulos
     console.log('\n📝 Verificando subtítulos...');
     if (fs.existsSync(subtitlesDir)) {
-      const subtitleFiles = fs.readdirSync(subtitlesDir).filter(f => f.endsWith('.vtt'));
-      console.log(`  ✅ Archivos de subtítulos: ${subtitleFiles.length}`);
-      subtitleFiles.forEach(file => console.log(`    • ${file}`));
+      const vttFiles = fs.readdirSync(subtitlesDir).filter(f => f.endsWith('.vtt'));
+      const m3u8Files = fs.readdirSync(subtitlesDir).filter(f => f.endsWith('.m3u8'));
+      console.log(`  ✅ Archivos VTT: ${vttFiles.length}`);
+      console.log(`  ✅ Playlists M3U8: ${m3u8Files.length}`);
+      vttFiles.forEach(file => console.log(`    • ${file}`));
+      m3u8Files.forEach(file => console.log(`    • ${file} (playlist)`));
     }
     
-    // 11. Verificar audio separado
+    // 12. Verificar audio separado
     console.log('\n🎵 Verificando audio separado...');
     const audioDir = path.join(hlsOutput.outputDir, 'audio');
     if (fs.existsSync(audioDir)) {
@@ -161,7 +179,7 @@ async function realWorldExample(): Promise<void> {
       audioFiles.forEach(file => console.log(`    • ${file}`));
     }
 
-    // 12. Verificar calidades de video
+    // 13. Verificar calidades de video
     console.log('\n📺 Verificando calidades de video...');
     const videoQualities = fs.readdirSync(hlsOutput.outputDir)
       .filter(item => {
@@ -171,7 +189,7 @@ async function realWorldExample(): Promise<void> {
     console.log(`  ✅ Calidades de video: ${videoQualities.length}`);
     videoQualities.forEach(quality => console.log(`    • ${quality}`));
 
-    // 13. Verificar master playlist
+    // 14. Verificar master playlist
     console.log('\n📋 Verificando master playlist...');
     if (fs.existsSync(masterPlaylistPath)) {
       const masterContent = await fs.promises.readFile(masterPlaylistPath, 'utf-8');
@@ -180,8 +198,8 @@ async function realWorldExample(): Promise<void> {
       const streamLines = masterContent.split('\n').filter(line => line.includes('#EXT-X-STREAM-INF'));
       
       console.log(`  ✅ Master playlist: ${path.basename(masterPlaylistPath)}`);
-      console.log(`    • Pistas de audio: ${audioLines.length}`);
-      console.log(`    • Pistas de subtítulos: ${subtitleLines.length}`);
+      console.log(`    • Pistas de audio: ${audioLines.length} (${demoAudioResult.audioTracks.map(t => t.language).join(', ')})`);
+      console.log(`    • Pistas de subtítulos: ${subtitleLines.length} (con M3U8)`);
       console.log(`    • Streams de video: ${streamLines.length}`);
     }
 
@@ -192,8 +210,8 @@ async function realWorldExample(): Promise<void> {
     
     console.log('\n📊 Resumen del procesamiento optimizado:');
     console.log(`  • Video original: ${path.basename(INPUT_VIDEO)}`);
-    console.log(`  • Audio separado: Generado automáticamente`);
-    console.log(`  • Subtítulos: ${subtitleTracks.length} pistas (ES, EN)`);
+    console.log(`  • Audio separado: ${demoAudioResult.audioTracks.length} idiomas (${demoAudioResult.audioTracks.map(t => t.language).join(', ')})`);
+    console.log(`  • Subtítulos: ${subtitleTracks.length} pistas con M3U8 (ES, EN)`);
     console.log(`  • URLs: Relativas (portables)`);
     console.log(`  • Estructura: Optimizada`);
     console.log(`  • Master playlist: ${path.basename(masterPlaylistPath)}`);
@@ -212,11 +230,21 @@ async function realWorldExample(): Promise<void> {
     console.log(`  2. Acceder al playlist: master.m3u8`);
     console.log(`  3. El reproductor HLS detectará automáticamente:`);
     console.log(`     - Múltiples calidades de video`);
-    console.log(`     - Pistas de audio separadas`);
-    console.log(`     - Subtítulos en español e inglés`);
+    console.log(`     - ${demoAudioResult.audioTracks.length} pistas de audio separadas (${demoAudioResult.audioTracks.map(t => t.language).join(', ')})`);
+    console.log(`     - Subtítulos con M3U8 playlists (ES, EN)`);
     console.log(`     - URLs relativas portables`);
+    console.log(`     - Demo con múltiples idiomas simulados`);
 
-    console.log('\n✨ Ejemplo completado exitosamente!');
+    console.log('\n✨ Ejemplo de uso real completado exitosamente!');
+    console.log('\n💡 Características implementadas:');
+    console.log('  ✅ Streaming adaptativo (ABR)');
+    console.log('  ✅ Audio separado por idioma (múltiples pistas)');
+    console.log('  ✅ Subtítulos con M3U8 playlists');
+    console.log('  ✅ Optimización de ancho de banda');
+    console.log('  ✅ Compatibilidad multiplataforma');
+    console.log('  ✅ Demo con múltiples idiomas simulados');
+    console.log('  ✅ URLs relativas para portabilidad');
+    console.log('  ✅ Estructura de archivos optimizada');
 
   } catch (error) {
     console.error('\n❌ Error durante el procesamiento:');

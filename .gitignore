@@ -30,3 +30,4 @@ dist/
 example-output/
 test-output/
 tests/media/
+processed_videos/

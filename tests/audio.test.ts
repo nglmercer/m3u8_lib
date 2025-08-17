@@ -34,6 +34,8 @@ describe('AudioManager', () => {
 
   afterEach(async () => {
     // Limpiar archivos de salida después de cada test
+    // Temporarily disabled for debugging
+    /*
     try {
       const files = fs.readdirSync(testOutputDir);
       for (const file of files) {
@@ -44,6 +46,7 @@ describe('AudioManager', () => {
     } catch (error) {
       // Ignorar errores de limpieza
     }
+    */
   });
 
   describe('Constructor', () => {
@@ -116,11 +119,16 @@ describe('AudioManager', () => {
 
       expect(typeof outputPath).toBe('string');
       expect(fs.existsSync(outputPath)).toBe(true);
-      expect(outputPath).toContain('_with_audio.mp4');
+      expect(outputPath).toMatch(/_with_\w+_\d+\.mp4$/); // Matches pattern like '_with_es_1234567890.mp4'
       
       // Verificar que el video resultante tiene más pistas de audio
       const newAudioTracks = await manager.extractAudioTracks(outputPath);
       const originalAudioTracks = await manager.extractAudioTracks(testVideoPath);
+      
+      console.log('Original audio tracks:', originalAudioTracks.length);
+      console.log('New audio tracks:', newAudioTracks.length);
+      console.log('Output file:', outputPath);
+      
       expect(newAudioTracks.length).toBeGreaterThan(originalAudioTracks.length);
     }, 30000);
 

@@ -14,6 +14,12 @@
             <p class="text-gray-600 mb-6">Reproductor de video HLS usando solo HLS.js sin librerías adicionales</p>
             
             <div class="mb-4">
+                <div class="mb-3">
+                    <label for="quality-select" class="block text-sm font-medium text-gray-700 mb-2">Calidad de video:</label>
+                    <select id="quality-select" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="auto">Automática</option>
+                    </select>
+                </div>
                 <video id="video" class="w-full rounded-lg shadow" controls>
                     <p>Tu navegador no soporta video HTML5.</p>
                 </video>
@@ -26,6 +32,8 @@
                     <li>• Soporte completo para HLS</li>
                     <li>• Controles nativos del navegador</li>
                     <li>• Streaming adaptativo automático</li>
+                    <li>• Selector manual de calidades</li>
+                    <li>• Información de bitrate en tiempo real</li>
                 </ul>
             </div>
         </div>
@@ -47,6 +55,32 @@
                 
                 hls.on(Hls.Events.MANIFEST_PARSED, function() {
                     console.log('✅ HLS manifest cargado');
+                    
+                    // Poblar selector de calidades
+                    const qualitySelect = document.getElementById('quality-select');
+                    const levels = hls.levels;
+                    
+                    // Limpiar opciones existentes excepto "Automática"
+                    qualitySelect.innerHTML = '<option value="auto">Automática</option>';
+                    
+                    // Agregar cada nivel de calidad
+                    levels.forEach((level, index) => {
+                        const option = document.createElement('option');
+                        option.value = index;
+                        option.textContent = `${level.height}p (${Math.round(level.bitrate / 1000)}kbps)`;
+                        qualitySelect.appendChild(option);
+                    });
+                    
+                    // Manejar cambio de calidad
+                    qualitySelect.addEventListener('change', function() {
+                        const selectedLevel = this.value;
+                        if (selectedLevel === 'auto') {
+                            hls.currentLevel = -1; // Automático
+                        } else {
+                            hls.currentLevel = parseInt(selectedLevel);
+                        }
+                        console.log('🎯 Calidad cambiada a:', selectedLevel === 'auto' ? 'Automática' : levels[selectedLevel].height + 'p');
+                    });
                 });
                 
                 hls.on(Hls.Events.ERROR, function(event, data) {

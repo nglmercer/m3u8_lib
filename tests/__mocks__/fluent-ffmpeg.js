@@ -135,9 +135,15 @@ class MockFfmpegCommand {
           }
           
           // Crear archivo mock con contenido básico
-          const mockContent = this.outputPath.endsWith('.m3u8') 
-            ? '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10.0,\nsegment0.ts\n#EXT-X-ENDLIST\n'
-            : 'mock video/audio content';
+          let mockContent;
+          if (this.outputPath.endsWith('.m3u8')) {
+            mockContent = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10.0,\nsegment0.ts\n#EXT-X-ENDLIST\n';
+          } else if (this.outputPath.endsWith('.mp4') || this.outputPath.endsWith('.avi') || this.outputPath.endsWith('.mkv')) {
+            // Create a larger mock file for video operations (>1000 bytes)
+            mockContent = 'mock video/audio content with additional padding to make file larger than 1000 bytes. '.repeat(50);
+          } else {
+            mockContent = 'mock video/audio content';
+          }
           
           fs.writeFileSync(this.outputPath, mockContent);
         }
@@ -173,7 +179,7 @@ class MockFfmpegCommand {
       // Mock de metadatos de video basado en el nombre del archivo
       let mockMetadata;
       
-      if (inputPath.includes('multi-audio') || inputPath.includes('_with_audio')) {
+      if (inputPath.includes('multi-audio') || inputPath.includes('_with_audio') || inputPath.includes('_with_')) {
         // Video con múltiples pistas de audio o con audio añadido
         mockMetadata = {
           format: {

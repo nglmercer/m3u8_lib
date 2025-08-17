@@ -295,6 +295,71 @@ export class M3U8Builder {
   }
 
   /**
+   * Generar playlist M3U8 para subtítulos individuales
+   */
+  generateSubtitlePlaylist(vttFile: string, duration?: number): string {
+    const lines: string[] = [];
+    
+    // Header obligatorio para subtítulos
+    lines.push('#EXTM3U');
+    lines.push('#EXT-X-VERSION:3');
+    lines.push('#EXT-X-PLAYLIST-TYPE:VOD');
+    
+    // Duración del segmento (por defecto 10 segundos si no se especifica)
+    const segmentDuration = duration || 10;
+    lines.push(`#EXT-X-TARGETDURATION:${segmentDuration}`);
+    lines.push('#EXT-X-MEDIA-SEQUENCE:0');
+    
+    // Agregar el archivo VTT como un segmento
+    lines.push(`#EXTINF:${segmentDuration}.000,`);
+    lines.push(vttFile);
+    
+    // Finalizar playlist
+    lines.push('#EXT-X-ENDLIST');
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Agregar playlist de subtítulos de manera conveniente
+   */
+  addSubtitlePlaylist(options: {
+    groupId?: string;
+    name: string;
+    language: string;
+    playlistUri: string;
+    isDefault?: boolean;
+    autoSelect?: boolean;
+  }): this {
+    return this.addMediaTrack({
+      type: 'SUBTITLES',
+      groupId: options.groupId || 'subs',
+      name: options.name,
+      language: options.language,
+      uri: options.playlistUri,
+      isDefault: options.isDefault,
+      autoSelect: options.autoSelect
+    });
+  }
+
+  /**
+   * Crear una copia de una pista de audio existente (para evitar duplicación de archivos)
+   */
+  duplicateAudioTrack(originalTrack: M3U8MediaTrack, newName: string, newGroupId?: string): this {
+    if (originalTrack.type !== 'AUDIO') {
+      throw new Error('Solo se pueden duplicar pistas de audio');
+    }
+
+    return this.addMediaTrack({
+      ...originalTrack,
+      name: newName,
+      groupId: newGroupId || originalTrack.groupId,
+      // Mantener la misma URI para reutilizar el archivo
+      uri: originalTrack.uri
+    });
+  }
+
+  /**
    * Obtener estadísticas del playlist
    */
   getStats(): {

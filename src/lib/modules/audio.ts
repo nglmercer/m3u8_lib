@@ -9,10 +9,71 @@ import { AudioTrack } from '../types';
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
 }
-if (ffprobeStatic && typeof ffprobeStatic === 'string') {
-  ffmpeg.setFfprobePath(ffprobeStatic);
+if (ffprobeStatic) {
+  const ffprobePath = typeof ffprobeStatic === 'string' ? ffprobeStatic : ffprobeStatic.path;
+  ffmpeg.setFfprobePath(ffprobePath);
 }
 import { audioConfigs } from '../config/defaults';
+
+/**
+ * Utilidad para normalizar y validar URIs de audio
+ */
+export class AudioUriUtils {
+  /**
+   * Normaliza una URI de audio eliminando duplicaciones y asegurando formato correcto
+   */
+  static normalizeAudioUri(uri: string): string {
+    if (!uri) return '';
+    
+    // Eliminar todas las duplicaciones de 'audio/' de forma recursiva
+    let normalized = uri;
+    while (normalized.includes('audio/audio/')) {
+      normalized = normalized.replace(/audio\/audio\//g, 'audio/');
+    }
+    
+    // Asegurar que comience con 'audio/' si no está presente
+    if (!normalized.startsWith('audio/')) {
+      normalized = `audio/${normalized}`;
+    }
+    
+    // Eliminar barras dobles
+    normalized = normalized.replace(/\/+/g, '/');
+    
+    return normalized;
+  }
+  
+  /**
+   * Valida que una URI de audio tenga el formato correcto
+   */
+  static validateAudioUri(uri: string): boolean {
+    if (!uri) return false;
+    
+    // Debe comenzar con 'audio/' y terminar con '.m3u8'
+    return uri.startsWith('audio/') && uri.endsWith('.m3u8');
+  }
+  
+  /**
+   * Genera una URI de audio consistente basada en el ID del track
+   */
+  static generateAudioUri(trackId: string): string {
+    if (!trackId) return '';
+    
+    // Limpiar el trackId de prefijos 'audio/' si los tiene
+    const cleanId = trackId.replace(/^audio\//g, '');
+    
+    return `audio/${cleanId}.m3u8`;
+  }
+  
+  /**
+   * Corrige un array de AudioTracks normalizando sus URIs
+   */
+  static fixAudioTracksUris(tracks: AudioTrack[]): AudioTrack[] {
+    return tracks.map(track => ({
+      ...track,
+      uri: track.uri ? this.normalizeAudioUri(track.uri) : this.generateAudioUri(track.id)
+    }));
+  }
+}
 
 export class AudioManager {
   private outputDir: string;
@@ -72,51 +133,73 @@ export class AudioManager {
     
     // Ensure output directory exists
     await fs.mkdir(this.outputDir, { recursive: true });
-    
-    console.log(`[${this.videoId}] Debug - Input video:`, inputVideoPath);
-    console.log(`[${this.videoId}] Debug - Audio file:`, audioPath);
-    console.log(`[${this.videoId}] Debug - Output path:`, outputPath);
+
+    // Verify input files exist
+    try {
+      await fs.access(inputVideoPath);
+      await fs.access(audioPath);
+    } catch (error) {
+      throw new Error(`Input file not found: ${error}`);
+    }
 
     return new Promise((resolve, reject) => {
-      const command = ffmpeg()
-        .input(inputVideoPath)
-        .input(audioPath)
-        .output(outputPath);
-
-      if (audioInfo.isDefault) {
-        command.outputOptions([
-          '-c:v', 'copy',
-          '-c:a:0', 'copy',
-          `-c:a:1`, audioInfo.codec || 'aac',
-          '-disposition:a:1', 'default'
-        ]);
-      } else {
-        command.outputOptions([
-          '-c:v', 'copy',
-          '-c:a:0', 'copy',
-          `-c:a:1`, audioInfo.codec || 'aac'
-        ]);
-      }
-
       try {
-        console.log(`[${this.videoId}] Debug - FFmpeg command:`, command._getArguments());
-      } catch (e) {
-        console.log(`[${this.videoId}] Debug - Could not get command arguments`);
-      }
+        const command = ffmpeg()
+          .input(inputVideoPath)
+          .input(audioPath)
+          .output(outputPath)
+          .outputOptions([
+            '-map', '0:v',     // Map video from first input
+            '-map', '0:a',     // Map audio from first input (original video)
+            '-map', '1:a',     // Map audio from second input (new audio file)
+            '-c:v', 'copy',    // Copy video codec
+            '-c:a:0', 'copy',  // Copy first audio track
+            '-c:a:1', audioInfo.codec || 'aac',  // Encode second audio track
+            '-shortest'        // Stop when shortest input ends
+          ]);
+        
+        if (audioInfo.isDefault) {
+          command.outputOptions(['-disposition:a:1', 'default']);
+        }
 
-      command
-        .on('start', (commandLine) => {
-          console.log(`[${this.videoId}] FFmpeg command: ${commandLine}`);
-        })
-        .on('end', () => {
-          console.log(`[${this.videoId}] Pista de audio añadida exitosamente`);
-          resolve(outputPath);
-        })
-        .on('error', (err: any) => {
-          console.error(`[${this.videoId}] Error añadiendo pista de audio:`, err.message);
-          reject(new Error(`Error añadiendo pista de audio: ${err.message}`));
-        })
-        .run();
+        command
+          .on('start', (commandLine) => {
+            console.log(`[${this.videoId}] FFmpeg started with command: ${commandLine}`);
+          })
+          .on('progress', (progress) => {
+            if (progress.percent) {
+              console.log(`[${this.videoId}] Processing: ${Math.round(progress.percent)}% done`);
+            }
+          })
+          .on('stderr', (stderrLine) => {
+            console.log(`[${this.videoId}] FFmpeg stderr: ${stderrLine}`);
+          })
+          .on('end', async () => {
+            try {
+              // Verify output file was created and has content
+              const stats = await fs.stat(outputPath);
+              if (stats.size < 1000) {
+                reject(new Error(`Output file is too small (${stats.size} bytes), likely corrupted`));
+                return;
+              }
+              console.log(`[${this.videoId}] Pista de audio añadida exitosamente (${stats.size} bytes)`);
+              resolve(outputPath);
+            } catch (error) {
+              console.error(`[${this.videoId}] Error checking output file:`, error);
+              reject(new Error(`Failed to verify output file: ${error}`));
+            }
+          })
+          .on('error', (err: any) => {
+            console.error(`[${this.videoId}] FFmpeg error:`, err);
+            console.error(`[${this.videoId}] Full error:`, err);
+            reject(new Error(`Error añadiendo pista de audio: ${err.message}`));
+          });
+
+        command.run();
+      } catch (error) {
+        console.error(`[${this.videoId}] Error setting up FFmpeg command:`, error);
+        reject(new Error(`Failed to start FFmpeg: ${error}`));
+      }
     });
   }
 
@@ -341,14 +424,20 @@ export class AudioManager {
       });
       
       // Usar ruta relativa para el playlist
-      audioPlaylistPaths.push(`audio/${track.language || 'unknown'}.m3u8`);
+      const relativeUri = `audio/${track.language || 'unknown'}.m3u8`;
+      const normalizedUri = AudioUriUtils.normalizeAudioUri(relativeUri);
+      
+      audioPlaylistPaths.push(normalizedUri);
       validAudioTracks.push({
         ...track,
-        uri: `audio/${track.language || 'unknown'}.m3u8`
+        uri: normalizedUri
       });
     }
     
-    return { audioPlaylistPaths, audioTracks: validAudioTracks };
+    // Aplicar corrección final a todas las URIs
+    const correctedTracks = AudioUriUtils.fixAudioTracksUris(validAudioTracks);
+    
+    return { audioPlaylistPaths, audioTracks: correctedTracks };
   }
 
   async generateAudioHls(
@@ -371,8 +460,8 @@ export class AudioManager {
       
       for (let i = 0; i < realAudioTracks.length; i++) {
         const track = realAudioTracks[i];
-        const audioPlaylistPath = path.join(this.outputDir, `audio_${track.id}.m3u8`);
-        const audioSegmentPattern = path.join(this.outputDir, `audio_${track.id}_segment%03d.ts`);
+        const audioPlaylistPath = path.join(this.outputDir, `audio/${track.id}.m3u8`);
+        const audioSegmentPattern = path.join(this.outputDir, `audio/${track.id}_segment%03d.ts`);
         
         console.log(`[${this.videoId}] Generando HLS para pista de audio: ${track.label}`);
         
@@ -404,14 +493,21 @@ export class AudioManager {
             .run();
         });
         
+        // Normalizar la URI antes de añadirla
+        const relativeUri = `audio/${track.id}.m3u8`;
+        const normalizedUri = AudioUriUtils.normalizeAudioUri(relativeUri);
+        
         audioPlaylistPaths.push(audioPlaylistPath);
-        validAudioTracks.push(track);
+        validAudioTracks.push({
+          ...track,
+          uri: normalizedUri
+        });
       }
     } else {
       // Procesar archivo de audio individual
       for (const track of audioTracks) {
-        const audioPlaylistPath = path.join(this.outputDir, `audio_${track.id}.m3u8`);
-        const audioSegmentPattern = path.join(this.outputDir, `audio_${track.id}_segment%03d.ts`);
+        const audioPlaylistPath = path.join(this.outputDir, `audio/${track.id}.m3u8`);
+        const audioSegmentPattern = path.join(this.outputDir, `audio/${track.id}_segment%03d.ts`);
         
         console.log(`[${this.videoId}] Generando HLS para archivo de audio: ${track.label}`);
         
@@ -441,8 +537,15 @@ export class AudioManager {
             .run();
         });
         
+        // Normalizar la URI antes de añadirla
+        const relativeUri = `audio/${track.id}.m3u8`;
+        const normalizedUri = AudioUriUtils.normalizeAudioUri(relativeUri);
+        
         audioPlaylistPaths.push(audioPlaylistPath);
-        validAudioTracks.push(track);
+        validAudioTracks.push({
+          ...track,
+          uri: normalizedUri
+        });
       }
     }
     
@@ -463,10 +566,14 @@ export class AudioManager {
       const audioLines: string[] = [];
       
       audioTracks.forEach(track => {
+        // Normalizar la URI para evitar duplicaciones
+        const normalizedUri = track.uri || AudioUriUtils.generateAudioUri(track.id);
+        const validatedUri = AudioUriUtils.normalizeAudioUri(normalizedUri);
+        
         audioLines.push(
           `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="${track.label}",` +
           `LANGUAGE="${track.language}",${track.isDefault ? 'DEFAULT=YES,' : ''}` +
-          `URI="audio_${track.id}.m3u8"`
+          `URI="${validatedUri}"`
         );
       });
 
@@ -497,10 +604,123 @@ export class AudioManager {
   }
 
   /**
+   * Generar múltiples pistas de audio artificiales para demo
+   * Usa el mismo archivo de audio pero simula diferentes idiomas
+   */
+  async generateDemoAudioTracks(
+    inputPath: string
+  ): Promise<{ audioPlaylistPaths: string[]; audioTracks: AudioTrack[] }> {
+    const audioPlaylistPaths: string[] = [];
+    const validAudioTracks: AudioTrack[] = [];
+    
+    // Asegurar que el directorio de audio existe
+    const audioDir = path.join(this.outputDir, 'audio');
+    await fs.mkdir(audioDir, { recursive: true });
+    
+    // Definir múltiples idiomas para el demo
+    const demoLanguages = [
+      { code: 'es', name: 'Español', isDefault: true },
+      { code: 'en', name: 'English', isDefault: false },
+      { code: 'fr', name: 'Français', isDefault: false },
+      { code: 'de', name: 'Deutsch', isDefault: false }
+    ];
+    
+    console.log(`[${this.videoId}] Generando ${demoLanguages.length} pistas de audio para demo`);
+    
+    // Generar HLS para cada idioma simulado
+    for (let i = 0; i < demoLanguages.length; i++) {
+      const lang = demoLanguages[i];
+      const audioPlaylistPath = path.join(audioDir, `${lang.code}.m3u8`);
+      const audioSegmentPattern = path.join(audioDir, `${lang.code}_segment%03d.ts`);
+      
+      console.log(`[${this.videoId}] Generando HLS para audio: ${lang.name} (${lang.code})`);
+      
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            '-map 0:a:0', // Usar la primera pista de audio
+            '-c:a aac',
+            '-b:a 128k',
+            '-ar 48000',
+            '-ac 2',
+            '-vn', // Sin video
+            '-hls_time 10',
+            '-hls_playlist_type vod',
+            `-hls_segment_filename ${audioSegmentPattern}`
+          ])
+          .output(audioPlaylistPath)
+          .on('start', (commandLine) => {
+            console.log(`[${this.videoId}] FFmpeg demo audio HLS: ${commandLine.substring(0, 200)}...`);
+          })
+          .on('end', () => {
+            console.log(`[${this.videoId}] Demo audio HLS generado: ${path.basename(audioPlaylistPath)}`);
+            resolve();
+          })
+          .on('error', (err: any) => {
+            console.error(`[${this.videoId}] Error generando demo audio HLS:`, err.message);
+            reject(new Error(`Error generando demo audio HLS: ${err.message}`));
+          })
+          .run();
+      });
+      
+      // Usar ruta relativa para el playlist y normalizar URI
+      const relativeUri = `audio/${lang.code}.m3u8`;
+      const normalizedUri = AudioUriUtils.normalizeAudioUri(relativeUri);
+      
+      audioPlaylistPaths.push(normalizedUri);
+      validAudioTracks.push({
+        id: lang.code, // Usar solo el código sin prefijo 'audio/'
+        language: lang.code,
+        label: lang.name,
+        codec: 'aac',
+        bitrate: '128k',
+        channels: 2,
+        isDefault: lang.isDefault,
+        uri: normalizedUri
+      });
+    }
+    
+    return { audioPlaylistPaths, audioTracks: validAudioTracks };
+  }
+
+  /**
    * Listar pistas de audio disponibles
    */
   async listAudioTracks(inputPath: string): Promise<AudioTrack[]> {
     return this.extractAudioTracks(inputPath);
+  }
+
+  /**
+   * Validar y corregir URIs de audio en un array de tracks
+   */
+  validateAndFixAudioUris(tracks: AudioTrack[]): AudioTrack[] {
+    console.log(`[${this.videoId}] Validando y corrigiendo URIs de audio...`);
+    
+    const correctedTracks = AudioUriUtils.fixAudioTracksUris(tracks);
+    
+    // Reportar correcciones realizadas
+    tracks.forEach((original, index) => {
+      const corrected = correctedTracks[index];
+      if (original.uri !== corrected.uri) {
+        console.log(`[${this.videoId}] URI corregida: "${original.uri}" -> "${corrected.uri}"`);
+      }
+    });
+    
+    return correctedTracks;
+  }
+
+  /**
+   * Validar una URI de audio individual
+   */
+  static validateAudioUri(uri: string): boolean {
+    return AudioUriUtils.validateAudioUri(uri);
+  }
+
+  /**
+   * Normalizar una URI de audio individual
+   */
+  static normalizeAudioUri(uri: string): string {
+    return AudioUriUtils.normalizeAudioUri(uri);
   }
 }
 

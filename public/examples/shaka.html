@@ -14,6 +14,20 @@
             <p class="text-gray-600 mb-6">Reproductor desarrollado por Google con excelente soporte para streaming</p>
             
             <div class="mb-4">
+                <div class="mb-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label for="quality-select" class="block text-sm font-medium text-gray-700 mb-2">Calidad de video:</label>
+                        <select id="quality-select" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500">
+                            <option value="auto">Automática</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="audio-select" class="block text-sm font-medium text-gray-700 mb-2">Pista de audio:</label>
+                        <select id="audio-select" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500">
+                            <option value="">Cargando...</option>
+                        </select>
+                    </div>
+                </div>
                 <video id="video" class="w-full rounded-lg shadow" controls>
                     <p>Tu navegador no soporta video HTML5.</p>
                 </video>
@@ -27,6 +41,9 @@
                     <li>• Streaming adaptativo avanzado</li>
                     <li>• Soporte para DRM</li>
                     <li>• APIs robustas para desarrolladores</li>
+                    <li>• Selector avanzado de calidades</li>
+                    <li>• Control completo de pistas de audio</li>
+                    <li>• Información detallada de streams</li>
                 </ul>
             </div>
             
@@ -60,6 +77,13 @@
                     console.log('✅ Shaka Player cargado correctamente');
                     statusDiv.textContent = '✅ Video cargado correctamente';
                     statusDiv.className = 'text-sm text-green-600';
+                    
+                    // Configurar selector de calidades
+                    setupQualitySelector(player);
+                    
+                    // Configurar selector de audio
+                    setupAudioSelector(player);
+                    
                 }).catch(function(error) {
                     console.error('❌ Error al cargar:', error);
                     statusDiv.textContent = 'Error al cargar: ' + error.message;
@@ -70,6 +94,91 @@
                 console.error('❌ Navegador no soportado');
                 statusDiv.textContent = '❌ Tu navegador no es compatible con Shaka Player';
                 statusDiv.className = 'text-sm text-red-600';
+            }
+            
+            // Función para configurar selector de calidades
+            function setupQualitySelector(player) {
+                const qualitySelect = document.getElementById('quality-select');
+                const tracks = player.getVariantTracks();
+                
+                // Limpiar opciones existentes
+                qualitySelect.innerHTML = '<option value="auto">Automática</option>';
+                
+                // Obtener calidades únicas
+                const qualities = [...new Set(tracks.map(track => track.height))]
+                    .filter(height => height)
+                    .sort((a, b) => b - a);
+                
+                qualities.forEach(height => {
+                    const option = document.createElement('option');
+                    option.value = height;
+                    option.textContent = height + 'p';
+                    qualitySelect.appendChild(option);
+                });
+                
+                // Manejar cambio de calidad
+                qualitySelect.addEventListener('change', function() {
+                    const selectedHeight = this.value;
+                    
+                    if (selectedHeight === 'auto') {
+                        player.configure({abr: {enabled: true}});
+                        console.log('🎯 Calidad automática activada');
+                    } else {
+                        player.configure({abr: {enabled: false}});
+                        const targetTracks = tracks.filter(track => track.height == selectedHeight);
+                        if (targetTracks.length > 0) {
+                            player.selectVariantTrack(targetTracks[0], true);
+                            console.log('🎯 Calidad cambiada a:', selectedHeight + 'p');
+                        }
+                    }
+                });
+                
+                console.log('📊 Calidades disponibles:', qualities.map(q => q + 'p').join(', '));
+            }
+            
+            // Función para configurar selector de audio
+            function setupAudioSelector(player) {
+                const audioSelect = document.getElementById('audio-select');
+                const audioTracks = player.getVariantTracks()
+                    .filter(track => track.audioCodec)
+                    .reduce((unique, track) => {
+                        const key = track.language + '_' + (track.audioCodec || 'default');
+                        if (!unique.find(t => t.language === track.language)) {
+                            unique.push(track);
+                        }
+                        return unique;
+                    }, []);
+                
+                // Limpiar opciones
+                audioSelect.innerHTML = '';
+                
+                if (audioTracks.length > 0) {
+                    audioTracks.forEach((track, index) => {
+                        const option = document.createElement('option');
+                        option.value = track.language || 'default';
+                        option.textContent = track.language ? 
+                            `${track.language.toUpperCase()} (${track.audioCodec || 'default'})` : 
+                            `Pista ${index + 1} (${track.audioCodec || 'default'})`;
+                        audioSelect.appendChild(option);
+                    });
+                    
+                    // Manejar cambio de audio
+                    audioSelect.addEventListener('change', function() {
+                        const selectedLang = this.value;
+                        const targetTrack = audioTracks.find(track => 
+                            (track.language || 'default') === selectedLang
+                        );
+                        
+                        if (targetTrack) {
+                            player.selectAudioLanguage(targetTrack.language || 'default');
+                            console.log('🎵 Audio cambiado a:', selectedLang);
+                        }
+                    });
+                    
+                    console.log('🎵 Pistas de audio disponibles:', audioTracks.length);
+                } else {
+                    audioSelect.innerHTML = '<option>Sin pistas adicionales</option>';
+                }
             }
         });
     </script>
