@@ -31,6 +31,16 @@ const filesToGenerate = [
     name: 'test-video-hd.mp4',
     description: 'video HD para pruebas de calidad',
     command: 'ffmpeg -f lavfi -i testsrc=duration=5:size=1280x720:rate=30 -f lavfi -i sine=frequency=1000:duration=5 -c:v libx264 -c:a aac -shortest'
+  },
+  {
+    name: 'test-audio-english.mp3',
+    description: 'audio en inglés',
+    command: 'ffmpeg -f lavfi -i sine=frequency=600:duration=5 -c:a mp3'
+  },
+  {
+    name: 'test-audio-french.mp3',
+    description: 'audio en francés',
+    command: 'ffmpeg -f lavfi -i sine=frequency=400:duration=5 -c:a mp3'
   }
 ];
 

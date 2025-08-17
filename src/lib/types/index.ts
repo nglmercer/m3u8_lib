@@ -69,6 +69,7 @@ export interface AudioTrack {
   bitrate: string;
   channels: number;
   isDefault?: boolean;
+  uri?: string;
 }
 
 export interface QualityLevel {

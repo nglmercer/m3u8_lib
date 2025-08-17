@@ -4,9 +4,9 @@ import { HlsOptions } from '../types';
 export const defaultHlsOptions: HlsOptions = {
   resolutions: [
     // Las resoluciones se pueden agregar dinámicamente
-    // { name: '480p', size: '854x480', bitrate: '800k' },
-    // { name: '720p', size: '1280x720', bitrate: '1500k' },
-    // { name: '1080p', size: '1920x1080', bitrate: '2800k' }
+    { name: '480p', size: '854x480', bitrate: '800k' },
+    { name: '720p', size: '1280x720', bitrate: '1500k' },
+    { name: '1080p', size: '1920x1080', bitrate: '2800k' }
   ],
   hlsTime: 10, // Duración del segmento en segundos
   hlsPlaylistType: 'vod', // 'vod' o 'event'
@@ -17,7 +17,7 @@ export const defaultHlsOptions: HlsOptions = {
   videoProfile: 'main',
   crf: 20, // Factor de tasa constante (menor = mejor calidad, archivo más grande)
   gopSize: 48, // Tamaño del grupo de imágenes (intervalo de keyframe)
-  proxyBaseUrlTemplate: 'http://localhost:3000/stream-resource/{basePath}{videoId}/',
+  proxyBaseUrlTemplate: '{basePath}{videoId}/',
   masterPlaylistName: 'master.m3u8',
   segmentNameTemplate: 'segment%03d.ts',
   resolutionPlaylistName: 'playlist.m3u8'

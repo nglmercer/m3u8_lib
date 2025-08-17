@@ -5,6 +5,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { HlsOptions, ConversionParams, ConversionResult, ProcessedResolution, VideoMetadata, VideoResolution } from '../types';
 import { defaultHlsOptions } from '../config/defaults';
+import { AudioManager } from '../modules/audio';
 
 // Configurar rutas de FFmpeg y FFprobe
 if (ffmpegStatic) {
@@ -118,14 +119,14 @@ export class HlsConverter {
       const shouldCopyCodecs = isOriginal && parseInt(name) <= copyCodecsThresholdHeight;
 
       if (shouldCopyCodecs) {
-        console.log(`[${videoId}] Segmentando resolución ${name} copiando streams.`);
-        outputOptions.push('-c:v copy', '-c:a copy');
+        console.log(`[${videoId}] Segmentando resolución ${name} copiando video sin audio.`);
+        outputOptions.push('-c:v copy', '-an'); // -an elimina el audio
       } else {
-        console.log(`[${videoId}] Re-codificando a ${name}.`);
+        console.log(`[${videoId}] Re-codificando a ${name} sin audio.`);
         outputOptions.push(
-          `-vf scale=${size}`,
-          `-c:a ${audioCodec}`, `-ar 48000`, `-b:a ${audioBitrate}`,
-          `-c:v ${videoCodec}`, `-profile:v ${videoProfile}`, `-crf ${crf}`, `-sc_threshold 0`,
+          `-vf scale=${size},format=yuv420p`,
+          `-an`, // Eliminar audio del video
+          `-c:v ${videoCodec}`, `-profile:v high`, `-crf ${crf}`, `-sc_threshold 0`,
           `-g ${gopSize}`, `-keyint_min ${gopSize}`,
           `-b:v ${bitrate}`,
           `-maxrate ${Math.floor(bandwidth * 1.2 / 1000)}k`,
@@ -254,6 +255,18 @@ export class HlsConverter {
         throw new Error('La conversión HLS no resultó en resoluciones exitosas.');
       }
 
+      // Generar audio separado una sola vez
+      const audioManager = new AudioManager(outputDir, videoId);
+      let audioTracks: any[] = [];
+      
+      try {
+        const audioResult = await audioManager.generateSeparateAudioHls(inputPath);
+        audioTracks = audioResult.audioTracks;
+        console.log(`[${videoId}] Audio separado generado: ${audioTracks.length} pistas`);
+      } catch (audioError: any) {
+        console.warn(`[${videoId}] No se pudo generar audio separado: ${audioError.message}`);
+      }
+
       // Crear playlist maestro
       const newBasePath = basePath ? basePath.endsWith('/') ? basePath : `${basePath}/` : '';
       const proxyBaseUrl = options.proxyBaseUrlTemplate
@@ -262,13 +275,24 @@ export class HlsConverter {
       
       let masterPlaylistContent = '#EXTM3U\n#EXT-X-VERSION:3\n';
 
+      // Agregar pistas de audio al master playlist
+      if (audioTracks.length > 0) {
+        audioTracks.forEach((track, index) => {
+          const groupId = 'audio';
+          const isDefault = index === 0 ? 'YES' : 'NO';
+          const autoselect = index === 0 ? 'YES' : 'NO';
+          masterPlaylistContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupId}",NAME="${track.label}",LANGUAGE="${track.language}",DEFAULT=${isDefault},AUTOSELECT=${autoselect},URI="${track.uri}"\n`;
+        });
+      }
+
       successfulResults.sort((a, b) => a.bandwidth - b.bandwidth);
 
       successfulResults.forEach(res => {
         const newRelativePath = `${proxyBaseUrl}${res.playlistRelativePath}`;
-        // Add codec information for better browser compatibility
-        const codecs = 'avc1.42E01E,mp4a.40.2'; // H.264 Baseline Profile + AAC-LC
-        masterPlaylistContent += `#EXT-X-STREAM-INF:BANDWIDTH=${res.bandwidth},RESOLUTION=${res.size},CODECS="${codecs}"\n`;
+        // Solo video sin audio embebido
+        const codecs = 'avc1.42E01E'; // Solo H.264 sin audio
+        const audioGroup = audioTracks.length > 0 ? ',AUDIO="audio"' : '';
+        masterPlaylistContent += `#EXT-X-STREAM-INF:BANDWIDTH=${res.bandwidth},RESOLUTION=${res.size},CODECS="${codecs}"${audioGroup}\n`;
         masterPlaylistContent += `${newRelativePath}\n`;
       });
 

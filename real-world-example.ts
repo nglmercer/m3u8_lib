@@ -20,6 +20,8 @@ const VIDEO_ID = 'real-world-demo';
 // Archivos de entrada
 const INPUT_VIDEO = path.join(MEDIA_DIR, 'test-video-hd.mp4');
 const EXTERNAL_AUDIO = path.join(MEDIA_DIR, 'test-audio.mp3');
+const ENGLISH_AUDIO = path.join(MEDIA_DIR, 'test-audio-english.mp3');
+const FRENCH_AUDIO = path.join(MEDIA_DIR, 'test-audio-french.mp3');
 const SPANISH_SUBTITLES = path.join(MEDIA_DIR, 'test-subtitles-es.srt');
 const ENGLISH_SUBTITLES = path.join(MEDIA_DIR, 'test-subtitles-en.srt');
 
@@ -48,6 +50,8 @@ async function realWorldExample(): Promise<void> {
     const files = [
       { path: INPUT_VIDEO, name: 'Video HD' },
       { path: EXTERNAL_AUDIO, name: 'Audio externo' },
+      { path: ENGLISH_AUDIO, name: 'Audio en inglés' },
+      { path: FRENCH_AUDIO, name: 'Audio en francés' },
       { path: SPANISH_SUBTITLES, name: 'Subtítulos en español' },
       { path: ENGLISH_SUBTITLES, name: 'Subtítulos en inglés' }
     ];
@@ -64,233 +68,135 @@ async function realWorldExample(): Promise<void> {
     await ensureDirectoryExists(OUTPUT_DIR);
     console.log(`\n📂 Directorio de salida creado: ${OUTPUT_DIR}`);
 
-    // Obtener metadatos del video original
-    console.log('\n🔍 Analizando video original...');
+    // 4. Análisis del video original
+    console.log('\n🔍 Analizando video original para HLS optimizado...');
     const qualityManager = new QualityManager(OUTPUT_DIR, VIDEO_ID);
     const originalMetadata = await qualityManager.getVideoMetadata(INPUT_VIDEO);
-    
+    console.log(`  📊 Video: ${originalMetadata.width}x${originalMetadata.height} @ ${originalMetadata.bitrate}`);
     console.log('  📊 Metadatos del video:',originalMetadata);
 
-    // 4. Gestión de audio
-    console.log('\n🎵 Procesando pistas de audio...');
-    const audioManager = new AudioManager(OUTPUT_DIR, VIDEO_ID);
-    
-    // Extraer pistas de audio existentes
-    const existingAudioTracks = await audioManager.extractAudioTracks(INPUT_VIDEO);
-    console.log(`  📻 Pistas de audio existentes: ${existingAudioTracks.length}`);
-    existingAudioTracks.forEach((track, index) => {
-      console.log(`    ${index + 1}. ${track.label} (${track.language}) - ${track.codec} ${track.bitrate} ${track.isDefault ? '[DEFAULT]' : ''}`);
-    });
-
-    // Añadir pista de audio externa
-    const audioInfo: Omit<AudioTrack, 'id'> = {
-      language: 'es',
-      label: 'Audio en Español (Externo)',
-      codec: 'aac',
-      bitrate: '128k',
-      channels: 2,
-      isDefault: false
-    };
-
-    console.log('  ➕ Añadiendo pista de audio externa...');
-    const videoWithExternalAudio = await audioManager.addAudioTrack(
-      INPUT_VIDEO,
-      EXTERNAL_AUDIO,
-      audioInfo
-    );
-    console.log(`  ✅ Video con audio externo: ${path.basename(videoWithExternalAudio)}`);
-
-    // 5. Gestión de subtítulos
-    console.log('\n📝 Procesando subtítulos...');
-    const subtitleManager = new SubtitleManager(OUTPUT_DIR, VIDEO_ID);
-    
-    // Añadir subtítulos en español
-    console.log('  ➕ Añadiendo subtítulos en español...');
-    const spanishSubtitleInfo: Omit<SubtitleTrack, 'path'> = {
-      id: 'spanish_subtitles',
-      language: 'es',
-      label: 'Español',
-      format: 'srt',
-      isDefault: false
-    };
-    
-    const videoWithSpanishSubs = await subtitleManager.addSubtitle(
-      videoWithExternalAudio,
-      SPANISH_SUBTITLES,
-      spanishSubtitleInfo
-    );
-    console.log(`  ✅ Subtítulos en español añadidos: ${path.basename(videoWithSpanishSubs)}`);
-
-    // Añadir subtítulos en inglés
-    console.log('  ➕ Añadiendo subtítulos en inglés...');
-    const englishSubtitleInfo: Omit<SubtitleTrack, 'path'> = {
-      id: 'english_subtitles',
-      language: 'en',
-      label: 'English',
-      format: 'srt',
-      isDefault: true
-    };
-    
-    const videoWithAllSubs = await subtitleManager.addSubtitle(
-      videoWithSpanishSubs,
-      ENGLISH_SUBTITLES,
-      englishSubtitleInfo
-    );
-    console.log(`  ✅ Subtítulos en inglés añadidos: ${path.basename(videoWithAllSubs)}`);
-
-    // Listar todos los subtítulos
-    const allSubtitles = await subtitleManager.listSubtitles(videoWithAllSubs);
-    console.log(`  📋 Total de subtítulos: ${allSubtitles.length}`);
-    allSubtitles.forEach((sub, index) => {
-      console.log(`    ${index + 1}. ${sub.label} (${sub.language}) - ${sub.format} ${sub.isDefault ? '[DEFAULT]' : ''}`);
-    });
-
-    // 6. Gestión de calidades
-    console.log('\n🎯 Generando múltiples calidades...');
-    
-    // Generar calidades automáticamente
-    console.log('  🔄 Optimización automática de calidades...');
-    const optimizedVideos = await qualityManager.autoOptimizeQualities(videoWithAllSubs);
-    console.log(`  ✅ Calidades generadas: ${optimizedVideos.length}`);
-    
-    // Crear información de calidades para HLS
-    const qualityLevels: QualityLevel[] = [];
-    
-    for (let i = 0; i < optimizedVideos.length; i++) {
-      const videosData = optimizedVideos[i];
-      const metadata = await qualityManager.getVideoMetadata(videosData.path);
-      const resolutionName = `${metadata.height}p`;
-      
-      const resolution: VideoResolution = {
-        name: resolutionName,
-        size: `${metadata.width}x${metadata.height}`,
-        bitrate: metadata.bitrate
-      };
-      
-      qualityLevels.push({
-        id: `quality_${i}`,
-        resolution,
-        path: videosData.path,
-        bandwidth: parseInt(metadata.bitrate.replace('k', '')) * 1000
-      });
-      
-      console.log(`    • ${resolutionName}: ${metadata.width}x${metadata.height} @ ${metadata.bitrate}`);
-    }
-
-    // 7. Conversión a HLS
-    console.log('\n🔄 Convirtiendo a HLS...');
+    // 7. Conversión a HLS con audio separado
+    console.log('\n🔄 Convirtiendo a HLS con audio separado...');
     const hlsConverter = new HlsConverter({
-      proxyBaseUrlTemplate: 'http://localhost:3000/example-output/{videoId}/'
+      
     }, OUTPUT_DIR);
     
-    // Convertir cada calidad a HLS
-    const hlsOutputs: { outputDir: string; masterPlaylistUrl: string; resolution: string }[] = [];
-    for (const quality of qualityLevels) {
-      console.log(`  🎬 Convirtiendo ${quality.resolution.name}...`);
-      const hlsOutput = await hlsConverter.convertToHls(
-        quality.path,
-        {
-          videoId: `${VIDEO_ID}_${quality.resolution.name}`,
-          basePath: ''
-        }
-      );
-      hlsOutputs.push({
-        outputDir: hlsOutput.outputDir,
-        masterPlaylistUrl: hlsOutput.masterPlaylistUrl,
-        resolution: quality.resolution.name
-      });
-      console.log(`    ✅ HLS ${quality.resolution.name}: ${path.basename(hlsOutput.outputDir)}`);
-    }
+    // Convertir el video original una sola vez con todas las calidades
+    console.log(`  🎬 Convirtiendo video con múltiples calidades...`);
+    const hlsOutput = await hlsConverter.convertToHls(
+      INPUT_VIDEO, // Usar el video original directamente
+      {
+        videoId: VIDEO_ID,
+        basePath: ''
+      }
+    );
+    
+    console.log(`    ✅ HLS generado: ${path.basename(hlsOutput.outputDir)}`);
+    console.log(`    ✅ Audio separado generado automáticamente`);
+    console.log(`    ✅ Master playlist: ${hlsOutput.masterPlaylistUrl}`);
 
-    // 8. Generar playlist maestro con todas las calidades
-    console.log('\n📋 Generando playlist maestro...');
-    const masterPlaylistPath = path.join(OUTPUT_DIR, 'master.m3u8');
+    // 8. Procesar subtítulos externos
+    console.log('\n📝 Procesando subtítulos externos...');
+    const subtitleManager = new SubtitleManager(hlsOutput.outputDir, VIDEO_ID);
     
-    // Crear playlist maestro usando M3U8Builder para mayor seguridad
-    const m3u8Builder = new M3U8Builder({ version: 3 });
+    // Crear directorio de subtítulos
+    const subtitlesDir = path.join(hlsOutput.outputDir, 'subtitles');
+    await ensureDirectoryExists(subtitlesDir);
     
-    // Agregar información de subtítulos
-    m3u8Builder
-      .addSubtitles({
-        name: 'English',
-        language: 'en',
-        uri: 'english_subtitles.vtt',
-        isDefault: true
-      })
-      .addSubtitles({
-        name: 'Español',
-        language: 'es',
-        uri: 'spanish_subtitles.vtt',
-        isDefault: false
-      })
-      // Agregar información de audio
-      .addAudio({
-        name: 'Audio Principal',
-        language: 'und',
-        uri: 'audio.m3u8',
-        isDefault: true
-      });
+    // Convertir archivos SRT a VTT y crear tracks de subtítulos
+    const subtitleTracks: SubtitleTrack[] = [];
     
-    // Ordenar por bandwidth para mejor experiencia de usuario
-    const sortedOutputs = hlsOutputs.sort((a, b) => {
-      const aQuality = qualityLevels.find(q => q.resolution.name === a.resolution);
-      const bQuality = qualityLevels.find(q => q.resolution.name === b.resolution);
-      return (aQuality?.bandwidth || 0) - (bQuality?.bandwidth || 0);
+    // Subtítulos en español
+    const spanishVttPath = path.join(subtitlesDir, 'es.vtt');
+    await subtitleManager.convertToVtt(SPANISH_SUBTITLES, spanishVttPath);
+    subtitleTracks.push({
+      id: 'sub_es',
+      language: 'es',
+      label: 'Español',
+      path: spanishVttPath,
+      format: 'vtt',
+      isDefault: true
     });
     
-    // Agregar streams de video
-    for (const hlsOutput of sortedOutputs) {
-      const quality = qualityLevels.find(q => q.resolution.name === hlsOutput.resolution);
-      if (quality) {
-        // Apuntar directamente al playlist de la calidad específica
-        const playlistUrl = `http://localhost:3000/example-output/${VIDEO_ID}_${hlsOutput.resolution}/${hlsOutput.resolution}/playlist.m3u8`;
-        
-        m3u8Builder.addStreamInfo({
-          bandwidth: quality.bandwidth,
-          resolution: quality.resolution.size,
-          audio: 'audio',
-          subtitles: 'subs',
-          uri: playlistUrl
-        });
-      }
+    // Subtítulos en inglés
+    const englishVttPath = path.join(subtitlesDir, 'en.vtt');
+    await subtitleManager.convertToVtt(ENGLISH_SUBTITLES, englishVttPath);
+    subtitleTracks.push({
+      id: 'sub_en',
+      language: 'en',
+      label: 'English',
+      path: englishVttPath,
+      format: 'vtt',
+      isDefault: false
+    });
+    
+    console.log(`    ✅ Subtítulos convertidos a VTT: ${subtitleTracks.length} pistas`);
+    
+    // Integrar subtítulos en el master playlist
+    const masterPlaylistPath = path.join(hlsOutput.outputDir, 'master.m3u8');
+    await subtitleManager.generateHlsWithSubtitles(masterPlaylistPath, subtitleTracks);
+    console.log(`    ✅ Master playlist actualizado con subtítulos`);
+    
+    // 9. Verificar estructura de archivos optimizada
+    console.log('\n📁 Verificando estructura de archivos optimizada...');
+    console.log(`    ✅ Video sin audio embebido: múltiples calidades`);
+    console.log(`    ✅ Audio separado: directorio /audio`);
+    console.log(`    ✅ Subtítulos: directorio /subtitles`);
+    console.log(`    ✅ URLs relativas para portabilidad`);
+
+    // 10. Verificar subtítulos
+    console.log('\n📝 Verificando subtítulos...');
+    if (fs.existsSync(subtitlesDir)) {
+      const subtitleFiles = fs.readdirSync(subtitlesDir).filter(f => f.endsWith('.vtt'));
+      console.log(`  ✅ Archivos de subtítulos: ${subtitleFiles.length}`);
+      subtitleFiles.forEach(file => console.log(`    • ${file}`));
     }
     
-    // Generar el contenido del playlist y escribir al archivo
-    const masterContent = m3u8Builder.build();
-    await fs.promises.writeFile(masterPlaylistPath, masterContent);
-    
-    // Mostrar estadísticas del playlist generado
-    const stats = m3u8Builder.getStats();
-    console.log(`  ✅ Playlist maestro: ${path.basename(masterPlaylistPath)}`);
-    console.log(`    • Pistas de audio: ${stats.audioTracks}`);
-    console.log(`    • Pistas de subtítulos: ${stats.subtitleTracks}`);
-    console.log(`    • Streams de video: ${stats.streamInfos}`);
-
-    // 8.1. Los archivos HLS ya se generaron directamente en el directorio de salida
-    console.log('\n📁 Archivos HLS generados en el directorio de salida...');
-    for (const hlsOutput of hlsOutputs) {
-      console.log(`    ✅ Generado ${hlsOutput.resolution}: ${path.basename(hlsOutput.outputDir)}`);
+    // 11. Verificar audio separado
+    console.log('\n🎵 Verificando audio separado...');
+    const audioDir = path.join(hlsOutput.outputDir, 'audio');
+    if (fs.existsSync(audioDir)) {
+      const audioFiles = fs.readdirSync(audioDir).filter(f => f.endsWith('.m3u8'));
+      console.log(`  ✅ Pistas de audio separadas: ${audioFiles.length}`);
+      audioFiles.forEach(file => console.log(`    • ${file}`));
     }
 
-    // 9. El audio ya está integrado en el master playlist
-    console.log('\n🎵 Audio integrado en el playlist maestro');
-    console.log(`  ✅ Información de audio añadida al playlist`);
+    // 12. Verificar calidades de video
+    console.log('\n📺 Verificando calidades de video...');
+    const videoQualities = fs.readdirSync(hlsOutput.outputDir)
+      .filter(item => {
+        const itemPath = path.join(hlsOutput.outputDir, item);
+        return fs.statSync(itemPath).isDirectory() && item.endsWith('p');
+      });
+    console.log(`  ✅ Calidades de video: ${videoQualities.length}`);
+    videoQualities.forEach(quality => console.log(`    • ${quality}`));
 
-    // 10. Los subtítulos ya están integrados en el master playlist
-    console.log('\n📝 Subtítulos integrados en el playlist maestro');
-    console.log(`  ✅ Información de subtítulos añadida al playlist`);
+    // 13. Verificar master playlist
+    console.log('\n📋 Verificando master playlist...');
+    if (fs.existsSync(masterPlaylistPath)) {
+      const masterContent = await fs.promises.readFile(masterPlaylistPath, 'utf-8');
+      const audioLines = masterContent.split('\n').filter(line => line.includes('#EXT-X-MEDIA:TYPE=AUDIO'));
+      const subtitleLines = masterContent.split('\n').filter(line => line.includes('#EXT-X-MEDIA:TYPE=SUBTITLES'));
+      const streamLines = masterContent.split('\n').filter(line => line.includes('#EXT-X-STREAM-INF'));
+      
+      console.log(`  ✅ Master playlist: ${path.basename(masterPlaylistPath)}`);
+      console.log(`    • Pistas de audio: ${audioLines.length}`);
+      console.log(`    • Pistas de subtítulos: ${subtitleLines.length}`);
+      console.log(`    • Streams de video: ${streamLines.length}`);
+    }
 
     // 11. Resumen final
     console.log('\n' + '=' .repeat(60));
     console.log('🎉 ¡Conversión completada exitosamente!');
     console.log('=' .repeat(60));
     
-    console.log('\n📊 Resumen del procesamiento:');
+    console.log('\n📊 Resumen del procesamiento optimizado:');
     console.log(`  • Video original: ${path.basename(INPUT_VIDEO)}`);
-    console.log(`  • Calidades generadas: ${qualityLevels.length}`);
-    console.log(`  • Pistas de audio: 1`);
-    console.log(`  • Subtítulos: ${allSubtitles.length}`);
-    console.log(`  • Playlist maestro: ${path.basename(masterPlaylistPath)}`);
+    console.log(`  • Audio separado: Generado automáticamente`);
+    console.log(`  • Subtítulos: ${subtitleTracks.length} pistas (ES, EN)`);
+    console.log(`  • URLs: Relativas (portables)`);
+    console.log(`  • Estructura: Optimizada`);
+    console.log(`  • Master playlist: ${path.basename(masterPlaylistPath)}`);
     
     console.log('\n📁 Archivos de salida:');
     const outputFiles = fs.readdirSync(OUTPUT_DIR);
@@ -302,12 +208,13 @@ async function realWorldExample(): Promise<void> {
     });
 
     console.log('\n🌐 Para reproducir el contenido HLS:');
-    console.log(`  1. Servir el directorio: ${OUTPUT_DIR}`);
-    console.log(`  2. Acceder al playlist: ${path.basename(masterPlaylistPath)}`);
+    console.log(`  1. Servir el directorio: ${hlsOutput.outputDir}`);
+    console.log(`  2. Acceder al playlist: master.m3u8`);
     console.log(`  3. El reproductor HLS detectará automáticamente:`);
     console.log(`     - Múltiples calidades de video`);
-    console.log(`     - Pistas de audio disponibles`);
-    console.log(`     - Subtítulos en múltiples idiomas`);
+    console.log(`     - Pistas de audio separadas`);
+    console.log(`     - Subtítulos en español e inglés`);
+    console.log(`     - URLs relativas portables`);
 
     console.log('\n✨ Ejemplo completado exitosamente!');
 

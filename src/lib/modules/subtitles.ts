@@ -107,7 +107,7 @@ export class SubtitleManager {
   /**
    * Convertir subtítulo a formato VTT
    */
-  private convertToVtt(inputPath: string, outputPath: string): Promise<void> {
+  async convertToVtt(inputPath: string, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .outputOptions(['-f', 'webvtt'])

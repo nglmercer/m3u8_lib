@@ -67,7 +67,8 @@ export class AudioManager {
     audioPath: string,
     audioInfo: Omit<AudioTrack, 'id'>
   ): Promise<string> {
-    const outputPath = path.join(this.outputDir, `${this.videoId}_with_audio.mp4`);
+    const timestamp = Date.now();
+    const outputPath = path.join(this.outputDir, `${this.videoId}_with_${audioInfo.language}_${timestamp}.mp4`);
     
     // Ensure output directory exists
     await fs.mkdir(this.outputDir, { recursive: true });
@@ -279,6 +280,173 @@ export class AudioManager {
         })
         .run();
     });
+  }
+
+  /**
+   * Extraer y convertir pistas de audio a formato HLS
+   */
+  /**
+   * Generar audio HLS separado una sola vez (optimizado)
+   * Extrae todas las pistas de audio del video original y las convierte a HLS
+   * sin re-codificar por cada calidad de video
+   */
+  async generateSeparateAudioHls(
+    inputPath: string
+  ): Promise<{ audioPlaylistPaths: string[]; audioTracks: AudioTrack[] }> {
+    const audioPlaylistPaths: string[] = [];
+    const validAudioTracks: AudioTrack[] = [];
+    
+    // Asegurar que el directorio de audio existe
+    const audioDir = path.join(this.outputDir, 'audio');
+    await fs.mkdir(audioDir, { recursive: true });
+    
+    // Extraer información de pistas de audio del video original
+    const realAudioTracks = await this.extractAudioTracks(inputPath);
+    console.log(`[${this.videoId}] Pistas de audio encontradas: ${realAudioTracks.length}`);
+    
+    // Generar HLS para cada pista de audio una sola vez
+    for (let i = 0; i < realAudioTracks.length; i++) {
+      const track = realAudioTracks[i];
+      const audioPlaylistPath = path.join(audioDir, `${track.language || 'unknown'}.m3u8`);
+      const audioSegmentPattern = path.join(audioDir, `${track.language || 'unknown'}_segment%03d.ts`);
+      
+      console.log(`[${this.videoId}] Generando HLS para audio: ${track.label} (${track.language})`);
+      
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .outputOptions([
+            `-map 0:a:${i}`,
+            '-c:a aac',
+            '-b:a 128k',
+            '-ar 48000',
+            '-ac 2',
+            '-vn', // Sin video
+            '-hls_time 10',
+            '-hls_playlist_type vod',
+            `-hls_segment_filename ${audioSegmentPattern}`
+          ])
+          .output(audioPlaylistPath)
+          .on('start', (commandLine) => {
+            console.log(`[${this.videoId}] FFmpeg audio HLS: ${commandLine.substring(0, 200)}...`);
+          })
+          .on('end', () => {
+            console.log(`[${this.videoId}] Audio HLS generado: ${path.basename(audioPlaylistPath)}`);
+            resolve();
+          })
+          .on('error', (err: any) => {
+            console.error(`[${this.videoId}] Error generando audio HLS:`, err.message);
+            reject(new Error(`Error generando audio HLS: ${err.message}`));
+          })
+          .run();
+      });
+      
+      // Usar ruta relativa para el playlist
+      audioPlaylistPaths.push(`audio/${track.language || 'unknown'}.m3u8`);
+      validAudioTracks.push({
+        ...track,
+        uri: `audio/${track.language || 'unknown'}.m3u8`
+      });
+    }
+    
+    return { audioPlaylistPaths, audioTracks: validAudioTracks };
+  }
+
+  async generateAudioHls(
+    inputPath: string,
+    audioTracks: AudioTrack[]
+  ): Promise<{ audioPlaylistPaths: string[]; audioTracks: AudioTrack[] }> {
+    const audioPlaylistPaths: string[] = [];
+    const validAudioTracks: AudioTrack[] = [];
+    
+    // Asegurar que el directorio de salida existe
+    await fs.mkdir(this.outputDir, { recursive: true });
+    
+    // Verificar si es un archivo de video o audio
+    const isVideoFile = inputPath.includes('.mp4') || inputPath.includes('.avi') || inputPath.includes('.mov');
+    
+    if (isVideoFile) {
+      // Procesar video: extraer pistas de audio reales
+      const realAudioTracks = await this.extractAudioTracks(inputPath);
+      console.log(`[${this.videoId}] Pistas de audio reales encontradas: ${realAudioTracks.length}`);
+      
+      for (let i = 0; i < realAudioTracks.length; i++) {
+        const track = realAudioTracks[i];
+        const audioPlaylistPath = path.join(this.outputDir, `audio_${track.id}.m3u8`);
+        const audioSegmentPattern = path.join(this.outputDir, `audio_${track.id}_segment%03d.ts`);
+        
+        console.log(`[${this.videoId}] Generando HLS para pista de audio: ${track.label}`);
+        
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(inputPath)
+            .outputOptions([
+              `-map 0:a:${i}`,
+              '-c:a aac',
+              '-b:a 128k',
+              '-ar 48000',
+              '-ac 2',
+              '-vn',
+              '-hls_time 10',
+              '-hls_playlist_type vod',
+              `-hls_segment_filename ${audioSegmentPattern}`
+            ])
+            .output(audioPlaylistPath)
+            .on('start', (commandLine) => {
+              console.log(`[${this.videoId}] FFmpeg audio HLS: ${commandLine.substring(0, 200)}...`);
+            })
+            .on('end', () => {
+              console.log(`[${this.videoId}] Audio HLS generado: ${path.basename(audioPlaylistPath)}`);
+              resolve();
+            })
+            .on('error', (err: any) => {
+              console.error(`[${this.videoId}] Error generando audio HLS:`, err.message);
+              reject(new Error(`Error generando audio HLS: ${err.message}`));
+            })
+            .run();
+        });
+        
+        audioPlaylistPaths.push(audioPlaylistPath);
+        validAudioTracks.push(track);
+      }
+    } else {
+      // Procesar archivo de audio individual
+      for (const track of audioTracks) {
+        const audioPlaylistPath = path.join(this.outputDir, `audio_${track.id}.m3u8`);
+        const audioSegmentPattern = path.join(this.outputDir, `audio_${track.id}_segment%03d.ts`);
+        
+        console.log(`[${this.videoId}] Generando HLS para archivo de audio: ${track.label}`);
+        
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(inputPath)
+            .outputOptions([
+              '-c:a aac',
+              '-b:a 128k',
+              '-ar 48000',
+              '-ac 2',
+              '-hls_time 10',
+              '-hls_playlist_type vod',
+              `-hls_segment_filename ${audioSegmentPattern}`
+            ])
+            .output(audioPlaylistPath)
+            .on('start', (commandLine) => {
+              console.log(`[${this.videoId}] FFmpeg audio HLS: ${commandLine.substring(0, 200)}...`);
+            })
+            .on('end', () => {
+              console.log(`[${this.videoId}] Audio HLS generado: ${path.basename(audioPlaylistPath)}`);
+              resolve();
+            })
+            .on('error', (err: any) => {
+              console.error(`[${this.videoId}] Error generando audio HLS:`, err.message);
+              reject(new Error(`Error generando audio HLS: ${err.message}`));
+            })
+            .run();
+        });
+        
+        audioPlaylistPaths.push(audioPlaylistPath);
+        validAudioTracks.push(track);
+      }
+    }
+    
+    return { audioPlaylistPaths, audioTracks: validAudioTracks };
   }
 
   /**
